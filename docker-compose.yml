@@ -1,0 +1,140 @@
+name: psn-server
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: psn-server-postgres
+    environment:
+      POSTGRES_USER: balena
+      POSTGRES_PASSWORD: balena
+      POSTGRES_DB: private_solutions_network
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - psn-internal
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U balena -d private_solutions_network"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: psn-server-redis
+    networks:
+      - psn-internal
+    ports:
+      - "6379:6379"
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:25.0
+    container_name: psn-server-keycloak
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/private_solutions_network
+      KC_DB_USERNAME: balena
+      KC_DB_PASSWORD: balena
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+    command: ["start-dev", "--http-port=8080"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - psn-internal
+    ports:
+      - "8082:8080"
+
+  admin-api:
+    build:
+      context: .
+      dockerfile: src/AdminApi/Dockerfile
+    container_name: psn-server-admin-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
+      Jwt__Authority: http://keycloak:8080/realms/private-solutions-network
+      Jwt__Audience: account
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    networks:
+      - psn-internal
+    ports:
+      - "8080:8080"
+
+  policy-api:
+    build:
+      context: .
+      dockerfile: src/PolicyApi/Dockerfile
+    container_name: psn-server-policy-api
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
+      Jwt__Authority: http://keycloak:8080/realms/private-solutions-network
+      Jwt__Audience: account
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    networks:
+      - psn-internal
+    ports:
+      - "8081:8081"
+
+  balena-orchestrator:
+    build:
+      context: .
+      dockerfile: src/BalenaOrchestrator/Dockerfile
+    container_name: psn-server-orchestrator
+    environment:
+      DOTNET_ENVIRONMENT: Development
+      Balena__ApiBase: https://api.balena-cloud.com
+      Balena__ApiToken: ${BALENA_API_TOKEN:-}
+      ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - psn-internal
+
+  admin-portal:
+    image: nginx:1.27-alpine
+    container_name: psn-server-admin-portal
+    volumes:
+      - ./deploy/admin-portal/index.html:/usr/share/nginx/html/index.html:ro
+    networks:
+      - psn-public
+
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    container_name: psn-server-reverse-proxy
+    volumes:
+      - ./deploy/reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - admin-api
+      - policy-api
+      - keycloak
+      - admin-portal
+    networks:
+      - psn-public
+      - psn-internal
+    ports:
+      - "80:80"
+
+volumes:
+  postgres_data:
+
+networks:
+  psn-internal:
+    name: psn-internal
+    internal: true
+  psn-public:
+    name: psn-public

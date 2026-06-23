@@ -1,0 +1,22 @@
+# Build outputs
+**/bin/
+**/obj/
+**/publish/
+**/out/
+artifacts/
+backups/
+
+# User secrets and env
+.env
+*.user
+*.suo
+*.pfx
+secrets.json
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
