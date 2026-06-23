@@ -1,6 +1,181 @@
 @AdminApi_HostAddress = http://localhost:5115
 
-GET {{AdminApi_HostAddress}}/weatherforecast/
+### Health check
+GET {{AdminApi_HostAddress}}/healthz
+
+###
+
+# ── USERS ───────────────────────────────────────────────────────────────────
+
+### List all users
+GET {{AdminApi_HostAddress}}/api/admin/users
 Accept: application/json
+
+###
+
+### Create a user
+POST {{AdminApi_HostAddress}}/api/admin/users
+Content-Type: application/json
+
+{
+	"externalId": "keycloak-sub-abc123",
+	"username": "jsmith",
+	"email": "jsmith@example.com"
+}
+
+###
+
+### Get single user (replace id)
+@userId = 00000000-0000-0000-0000-000000000001
+GET {{AdminApi_HostAddress}}/api/admin/users/{{userId}}
+Accept: application/json
+
+###
+
+### Assign user to group (replace ids)
+@groupId = 00000000-0000-0000-0000-000000000002
+POST {{AdminApi_HostAddress}}/api/admin/users/{{userId}}/groups/{{groupId}}
+
+###
+
+### Remove user from group
+DELETE {{AdminApi_HostAddress}}/api/admin/users/{{userId}}/groups/{{groupId}}
+
+###
+
+# ── GROUPS ──────────────────────────────────────────────────────────────────
+
+### List all groups
+GET {{AdminApi_HostAddress}}/api/admin/groups
+Accept: application/json
+
+###
+
+### Create a group
+POST {{AdminApi_HostAddress}}/api/admin/groups
+Content-Type: application/json
+
+{
+	"name": "teachers"
+}
+
+###
+
+### Get group detail (users + assigned apps)
+GET {{AdminApi_HostAddress}}/api/admin/groups/{{groupId}}
+Accept: application/json
+
+###
+
+### Assign app to group (replace ids)
+@appId = 00000000-0000-0000-0000-000000000003
+POST {{AdminApi_HostAddress}}/api/admin/groups/{{groupId}}/apps/{{appId}}
+
+###
+
+### Remove app from group
+DELETE {{AdminApi_HostAddress}}/api/admin/groups/{{groupId}}/apps/{{appId}}
+
+###
+
+### Delete a group
+DELETE {{AdminApi_HostAddress}}/api/admin/groups/{{groupId}}
+
+###
+
+# ── APPLICATIONS ────────────────────────────────────────────────────────────
+
+### List all applications
+GET {{AdminApi_HostAddress}}/api/admin/apps
+Accept: application/json
+
+###
+
+### Create an application (server-authoritative = backup required)
+POST {{AdminApi_HostAddress}}/api/admin/apps
+Content-Type: application/json
+
+{
+	"name": "Moodle",
+	"balenaAppSlug": "myorg/moodle",
+	"serverAuthoritative": true
+}
+
+###
+
+### Create an edge-autonomous application (no central backup required)
+POST {{AdminApi_HostAddress}}/api/admin/apps
+Content-Type: application/json
+
+{
+	"name": "LibreOffice",
+	"balenaAppSlug": "myorg/libreoffice",
+	"serverAuthoritative": false
+}
+
+###
+
+### Get single application
+GET {{AdminApi_HostAddress}}/api/admin/apps/{{appId}}
+Accept: application/json
+
+###
+
+### Update application (enable/disable, toggle backup mode)
+PUT {{AdminApi_HostAddress}}/api/admin/apps/{{appId}}
+Content-Type: application/json
+
+{
+	"name": "Moodle",
+	"balenaAppSlug": "myorg/moodle",
+	"enabled": true,
+	"serverAuthoritative": true
+}
+
+###
+
+### Delete application
+DELETE {{AdminApi_HostAddress}}/api/admin/apps/{{appId}}
+
+###
+
+# ── DEVICES (EDGE NODES) ────────────────────────────────────────────────────
+
+### List all registered edge devices
+GET {{AdminApi_HostAddress}}/api/admin/devices
+Accept: application/json
+
+###
+
+### Register an edge device
+POST {{AdminApi_HostAddress}}/api/admin/devices
+Content-Type: application/json
+
+{
+	"deviceUuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+	"displayName": "Classroom Node 1"
+}
+
+###
+
+### Get device detail (with assigned users)
+@deviceId = 00000000-0000-0000-0000-000000000004
+GET {{AdminApi_HostAddress}}/api/admin/devices/{{deviceId}}
+Accept: application/json
+
+###
+
+### Assign user to device
+POST {{AdminApi_HostAddress}}/api/admin/devices/{{deviceId}}/users/{{userId}}
+
+###
+
+### Remove user from device
+DELETE {{AdminApi_HostAddress}}/api/admin/devices/{{deviceId}}/users/{{userId}}
+
+###
+
+### Delete device
+DELETE {{AdminApi_HostAddress}}/api/admin/devices/{{deviceId}}
 
 ###

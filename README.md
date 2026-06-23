@@ -78,3 +78,47 @@ If dotnet-ef is not installed:
 - Edge devices host local app runtimes and local user state needed for offline operation.
 - Each edge node should sync user-specific state back to the central server and be able to restore that state to a replacement node.
 - Moodle, GNU Health, or similar systems can remain server-primary while edge devices cache only the per-user or per-node state required for continuity.
+
+## Two-scenario operating model
+- Scenario 1 (server role): central control plane and system of record for identity, policy, and selected app data.
+- Scenario 2 (edge role): constrained app runtime that consumes assigned containers and enforces least-privilege account access.
+- Edge login gives access only to the authenticated user's allowed data on that node.
+- Main server-hosted app UI may expose broader account views according to central authorization policy.
+
+## App backup scope
+- Server-authoritative apps (default examples: Moodle, GNU Health) must back up account/progress snapshots to the server.
+- Edge-autonomous apps do not require central backup; the server only assigns and orchestrates their deployment.
+- Server remains the durable record holder for server-authoritative app history and restoration.
+
+## Production deployment pattern
+- Production should run prebuilt images from a registry, not local source builds.
+- Application services are pinned by release tag using `PSN_RELEASE` in `docker-compose.yml`.
+- Copy `deploy/production.env.example` to `deploy/production.env` on the server and set real values.
+
+### Release flow (Git to server)
+1. Commit and push code to `main`.
+2. Build and publish new images with an immutable tag (for example Git SHA or release version).
+3. Update `PSN_RELEASE` in `deploy/production.env` on the server.
+4. Pull and apply:
+   - `docker compose --env-file deploy/production.env pull`
+   - `docker compose --env-file deploy/production.env up -d`
+
+### Operator commands (update option on server)
+- Check active/previous release and running services:
+   - `pwsh ./deploy/Check-Release.ps1 -EnvFile deploy/production.env`
+- Deploy a new release tag:
+   - `pwsh ./deploy/Update-Release.ps1 -ReleaseTag 2026.06.24.1 -EnvFile deploy/production.env`
+- Roll back to previous known-good release:
+   - `pwsh ./deploy/Rollback-Release.ps1 -EnvFile deploy/production.env`
+
+### Safe rollback strategy
+1. Keep `PSN_PREVIOUS_RELEASE` set to the last known-good release in `deploy/production.env`.
+2. Roll back by setting `PSN_RELEASE` to that value.
+3. Re-deploy:
+   - `docker compose --env-file deploy/production.env pull`
+   - `docker compose --env-file deploy/production.env up -d`
+
+### Update availability note
+- This repository now supports pinned, pull-based deployments.
+- Automatic "new version available" prompts require an external deploy controller (for example CI/CD + release monitor or GitHub Actions + a server-side updater).
+- Without that controller, updates remain an explicit operator action using the commands above.

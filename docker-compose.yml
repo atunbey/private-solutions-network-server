@@ -2,8 +2,10 @@ name: psn-server
 
 services:
   postgres:
-    image: postgres:16
+    image: ${POSTGRES_IMAGE:-postgres:16.4}
+    pull_policy: if_not_present
     container_name: psn-server-postgres
+    restart: unless-stopped
     environment:
       POSTGRES_USER: balena
       POSTGRES_PASSWORD: balena
@@ -21,16 +23,25 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: ${REDIS_IMAGE:-redis:7.2.5-alpine}
+    pull_policy: if_not_present
     container_name: psn-server-redis
+    restart: unless-stopped
     networks:
       - psn-internal
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:25.0
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:25.0.6}
+    pull_policy: if_not_present
     container_name: psn-server-keycloak
+    restart: unless-stopped
     environment:
       KC_DB: postgres
       KC_DB_URL: jdbc:postgresql://postgres:5432/private_solutions_network
@@ -39,6 +50,7 @@ services:
       KEYCLOAK_ADMIN: admin
       KEYCLOAK_ADMIN_PASSWORD: admin
       KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
       KC_PROXY_HEADERS: xforwarded
     command: ["start-dev", "--http-port=8080"]
     depends_on:
@@ -48,14 +60,20 @@ services:
       - psn-internal
     ports:
       - "8082:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health/ready >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 15
+      start_period: 45s
 
   admin-api:
-    build:
-      context: .
-      dockerfile: src/AdminApi/Dockerfile
+    image: ${ADMIN_API_IMAGE:-ghcr.io/atunbey/private-solutions-network-server/admin-api}:${PSN_RELEASE:-2026.06.23.1}
+    pull_policy: always
     container_name: psn-server-admin-api
+    restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
       Jwt__Authority: http://keycloak:8080/realms/private-solutions-network
       Jwt__Audience: account
@@ -63,19 +81,25 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
     networks:
       - psn-internal
     ports:
       - "8080:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
 
   policy-api:
-    build:
-      context: .
-      dockerfile: src/PolicyApi/Dockerfile
+    image: ${POLICY_API_IMAGE:-ghcr.io/atunbey/private-solutions-network-server/policy-api}:${PSN_RELEASE:-2026.06.23.1}
+    pull_policy: always
     container_name: psn-server-policy-api
+    restart: unless-stopped
     environment:
-      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_ENVIRONMENT: Production
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
       Jwt__Authority: http://keycloak:8080/realms/private-solutions-network
       Jwt__Audience: account
@@ -83,19 +107,25 @@ services:
       postgres:
         condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
     networks:
       - psn-internal
     ports:
       - "8081:8081"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/healthz >/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 20s
 
   balena-orchestrator:
-    build:
-      context: .
-      dockerfile: src/BalenaOrchestrator/Dockerfile
+    image: ${ORCHESTRATOR_IMAGE:-ghcr.io/atunbey/private-solutions-network-server/balena-orchestrator}:${PSN_RELEASE:-2026.06.23.1}
+    pull_policy: always
     container_name: psn-server-orchestrator
+    restart: unless-stopped
     environment:
-      DOTNET_ENVIRONMENT: Development
+      DOTNET_ENVIRONMENT: Production
       Balena__ApiBase: https://api.balena-cloud.com
       Balena__ApiToken: ${BALENA_API_TOKEN:-}
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
@@ -104,30 +134,53 @@ services:
         condition: service_healthy
     networks:
       - psn-internal
+    healthcheck:
+      test: ["CMD-SHELL", "dotnet --list-runtimes >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
 
   admin-portal:
-    image: nginx:1.27-alpine
+    image: ${ADMIN_PORTAL_IMAGE:-nginx:1.27.2-alpine}
+    pull_policy: if_not_present
     container_name: psn-server-admin-portal
+    restart: unless-stopped
     volumes:
       - ./deploy/admin-portal/index.html:/usr/share/nginx/html/index.html:ro
     networks:
       - psn-public
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
 
   reverse-proxy:
-    image: nginx:1.27-alpine
+    image: ${REVERSE_PROXY_IMAGE:-nginx:1.27.2-alpine}
+    pull_policy: if_not_present
     container_name: psn-server-reverse-proxy
+    restart: unless-stopped
     volumes:
       - ./deploy/reverse-proxy/nginx.conf:/etc/nginx/nginx.conf:ro
     depends_on:
-      - admin-api
-      - policy-api
-      - keycloak
-      - admin-portal
+      admin-api:
+        condition: service_healthy
+      policy-api:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      admin-portal:
+        condition: service_healthy
     networks:
       - psn-public
       - psn-internal
     ports:
       - "80:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost >/dev/null || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:
