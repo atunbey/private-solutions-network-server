@@ -22,6 +22,7 @@ public class AdminController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost("users")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> CreateUser([FromBody] CreateUserRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Username) || string.IsNullOrWhiteSpace(request.Email))
@@ -40,6 +41,61 @@ public class AdminController(AppDbContext dbContext) : ControllerBase
             new UserResponse(user.Id, user.ExternalId, user.Username, user.Email, user.CreatedUtc));
     }
 
+    [HttpPut("users/{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
+    public async Task<IActionResult> UpdateUser(Guid id, [FromBody] UpdateUserRequest request)
+    {
+        var user = await dbContext.Users.SingleOrDefaultAsync(x => x.Id == id);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        var externalId = request.ExternalId?.Trim() ?? string.Empty;
+        var username = request.Username.Trim();
+        var email = request.Email.Trim();
+
+        if (await dbContext.Users.AnyAsync(x => x.Id != id && x.Username == username))
+        {
+            return Conflict(new { message = "A user with that username already exists." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(externalId) && await dbContext.Users.AnyAsync(x => x.Id != id && x.ExternalId == externalId))
+        {
+            return Conflict(new { message = "A user with that external ID already exists." });
+        }
+
+        user.ExternalId = externalId;
+        user.Username = username;
+        user.Email = email;
+        dbContext.AuditLogs.Add(new AuditLog { Actor = ActorName(), Action = "user.update", Details = id.ToString() });
+        await dbContext.SaveChangesAsync();
+
+        return Ok(new UserResponse(user.Id, user.ExternalId, user.Username, user.Email, user.CreatedUtc));
+    }
+
+    [HttpDelete("users/{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
+    public async Task<IActionResult> DeleteUser(Guid id)
+    {
+        var user = await dbContext.Users
+            .Include(x => x.UserGroups)
+            .Include(x => x.DeviceAssignments)
+            .SingleOrDefaultAsync(x => x.Id == id);
+        if (user is null)
+        {
+            return NotFound();
+        }
+
+        dbContext.UserGroups.RemoveRange(user.UserGroups);
+        dbContext.DeviceAssignments.RemoveRange(user.DeviceAssignments);
+        dbContext.Users.Remove(user);
+        dbContext.AuditLogs.Add(new AuditLog { Actor = ActorName(), Action = "user.delete", Details = id.ToString() });
+        await dbContext.SaveChangesAsync();
+
+        return NoContent();
+    }
+
     [HttpGet("users/{id:guid}")]
     public async Task<IActionResult> GetUser(Guid id)
     {
@@ -55,6 +111,7 @@ public class AdminController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost("users/{userId:guid}/groups/{groupId:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> AssignGroup(Guid userId, Guid groupId)
     {
         var exists = await dbContext.UserGroups.AnyAsync(x => x.UserId == userId && x.GroupId == groupId);
@@ -69,6 +126,7 @@ public class AdminController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpDelete("users/{userId:guid}/groups/{groupId:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> RemoveGroup(Guid userId, Guid groupId)
     {
         var row = await dbContext.UserGroups.SingleOrDefaultAsync(x => x.UserId == userId && x.GroupId == groupId);
@@ -80,6 +138,7 @@ public class AdminController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost("groups/{groupId:guid}/apps/{applicationId:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> AssignApplication(Guid groupId, Guid applicationId)
     {
         var exists = await dbContext.GroupApplications.AnyAsync(x => x.GroupId == groupId && x.ApplicationId == applicationId);
@@ -94,6 +153,7 @@ public class AdminController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpDelete("groups/{groupId:guid}/apps/{applicationId:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> RemoveApplication(Guid groupId, Guid applicationId)
     {
         var row = await dbContext.GroupApplications.SingleOrDefaultAsync(x => x.GroupId == groupId && x.ApplicationId == applicationId);

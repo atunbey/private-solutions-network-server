@@ -1,6 +1,7 @@
 namespace Shared.Contracts.Admin;
 
 public record CreateGroupRequest(string Name);
+public record UpdateGroupRequest(string Name);
 
 public record GroupResponse(Guid Id, string Name);
 

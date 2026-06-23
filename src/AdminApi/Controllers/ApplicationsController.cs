@@ -30,6 +30,7 @@ public class ApplicationsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> CreateApplication([FromBody] CreateApplicationRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name) || string.IsNullOrWhiteSpace(request.BalenaAppSlug))
@@ -53,6 +54,7 @@ public class ApplicationsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPut("{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> UpdateApplication(Guid id, [FromBody] UpdateApplicationRequest request)
     {
         var app = await dbContext.Applications.FindAsync(id);
@@ -69,6 +71,7 @@ public class ApplicationsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> DeleteApplication(Guid id)
     {
         var app = await dbContext.Applications

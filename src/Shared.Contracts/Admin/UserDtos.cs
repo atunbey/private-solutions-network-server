@@ -1,6 +1,7 @@
 namespace Shared.Contracts.Admin;
 
 public record CreateUserRequest(string ExternalId, string Username, string Email);
+public record UpdateUserRequest(string ExternalId, string Username, string Email);
 
 public record UserResponse(Guid Id, string ExternalId, string Username, string Email, DateTime CreatedUtc);
 

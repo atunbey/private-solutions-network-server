@@ -37,6 +37,7 @@ public class DevicesController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> CreateDevice([FromBody] CreateDeviceRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.DeviceUuid))
@@ -58,7 +59,34 @@ public class DevicesController(AppDbContext dbContext) : ControllerBase
             new DeviceResponse(device.Id, device.DeviceUuid, device.DisplayName));
     }
 
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
+    public async Task<IActionResult> UpdateDevice(Guid id, [FromBody] UpdateDeviceRequest request)
+    {
+        var device = await dbContext.Devices.SingleOrDefaultAsync(x => x.Id == id);
+        if (device is null)
+        {
+            return NotFound();
+        }
+
+        var deviceUuid = request.DeviceUuid.Trim();
+        var displayName = request.DisplayName.Trim();
+
+        if (await dbContext.Devices.AnyAsync(x => x.Id != id && x.DeviceUuid == deviceUuid))
+        {
+            return Conflict(new { message = "A device with that UUID already exists." });
+        }
+
+        device.DeviceUuid = deviceUuid;
+        device.DisplayName = displayName;
+        dbContext.AuditLogs.Add(new AuditLog { Actor = ActorName(), Action = "device.update", Details = id.ToString() });
+        await dbContext.SaveChangesAsync();
+
+        return Ok(new DeviceResponse(device.Id, device.DeviceUuid, device.DisplayName));
+    }
+
     [HttpPost("{deviceId:guid}/users/{userId:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> AssignUser(Guid deviceId, Guid userId)
     {
         if (!await dbContext.Devices.AnyAsync(d => d.Id == deviceId))
@@ -78,6 +106,7 @@ public class DevicesController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpDelete("{deviceId:guid}/users/{userId:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> RemoveUser(Guid deviceId, Guid userId)
     {
         var row = await dbContext.DeviceAssignments.SingleOrDefaultAsync(da => da.DeviceId == deviceId && da.UserId == userId);
@@ -89,6 +118,7 @@ public class DevicesController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> DeleteDevice(Guid id)
     {
         var device = await dbContext.Devices

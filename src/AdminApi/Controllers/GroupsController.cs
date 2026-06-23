@@ -39,6 +39,7 @@ public class GroupsController(AppDbContext dbContext) : ControllerBase
     }
 
     [HttpPost]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> CreateGroup([FromBody] CreateGroupRequest request)
     {
         if (string.IsNullOrWhiteSpace(request.Name))
@@ -55,7 +56,36 @@ public class GroupsController(AppDbContext dbContext) : ControllerBase
         return CreatedAtAction(nameof(GetGroup), new { id = group.Id }, new GroupResponse(group.Id, group.Name));
     }
 
+    [HttpPut("{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
+    public async Task<IActionResult> UpdateGroup(Guid id, [FromBody] UpdateGroupRequest request)
+    {
+        var group = await dbContext.Groups.SingleOrDefaultAsync(x => x.Id == id);
+        if (group is null)
+        {
+            return NotFound();
+        }
+
+        var name = request.Name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return BadRequest(new { message = "Name is required." });
+        }
+
+        if (await dbContext.Groups.AnyAsync(x => x.Id != id && x.Name == name))
+        {
+            return Conflict(new { message = "A group with that name already exists." });
+        }
+
+        group.Name = name;
+        dbContext.AuditLogs.Add(new AuditLog { Actor = ActorName(), Action = "group.update", Details = id.ToString() });
+        await dbContext.SaveChangesAsync();
+
+        return Ok(new GroupResponse(group.Id, group.Name));
+    }
+
     [HttpDelete("{id:guid}")]
+    [Authorize(Roles = "psn-admin")]
     public async Task<IActionResult> DeleteGroup(Guid id)
     {
         var group = await dbContext.Groups
