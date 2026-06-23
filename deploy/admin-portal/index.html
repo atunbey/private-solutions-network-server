@@ -346,6 +346,7 @@
 
     const state = { users: [], groups: [], apps: [], devices: [] };
     const session = { accessToken: '', refreshToken: '', idToken: '', roles: [], isAdmin: false, expiresAt: 0 };
+    const editing = { userId: null, groupId: null, appId: null, deviceId: null };
 
     tokenInput.value = localStorage.getItem('psn_admin_token') || '';
 
@@ -534,8 +535,37 @@
       document.getElementById('assignDeviceSelect').innerHTML = optHtml(state.devices, 'id', d => `${d.displayName || d.deviceUuid}`);
     }
 
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function clearEditing(kind) {
+      editing[`${kind}Id`] = null;
+    }
+
+    function readRowValue(id, field) {
+      const selector = `[data-edit-field="${field}"][data-id="${CSS.escape(id)}"]`;
+      const element = document.querySelector(selector);
+      return element ? element.value : '';
+    }
+
     function rowActions(kind, entity) {
       if (!session.isAdmin) return '<span class="badge">read-only</span>';
+
+      const isEditing = editing[`${kind}Id`] === entity.id;
+      if (isEditing) {
+        return `
+          <div class="actions">
+            <button class="btn-primary action-btn" data-action="save-${kind}" data-id="${entity.id}">Save</button>
+            <button class="btn-ghost action-btn" data-action="cancel-${kind}" data-id="${entity.id}">Cancel</button>
+          </div>`;
+      }
+
       return `
         <div class="actions">
           <button class="btn-ghost action-btn" data-action="edit-${kind}" data-id="${entity.id}">Edit</button>
@@ -545,30 +575,44 @@
 
     function renderUsers(details) {
       usersBody.innerHTML = details.map(u => {
+        const isEditing = session.isAdmin && editing.userId === u.id;
         const groups = (u.groups || []).map(g => `<span class="chip">${g.name}</span>`).join('') || '-';
-        return `<tr><td>${u.username}</td><td>${u.email}</td><td>${groups}</td><td>${rowActions('user', u)}</td></tr>`;
+        const usernameCell = isEditing ? `<input data-edit-field="username" data-id="${u.id}" value="${escapeHtml(u.username)}">` : escapeHtml(u.username);
+        const emailCell = isEditing ? `<input data-edit-field="email" data-id="${u.id}" value="${escapeHtml(u.email)}">` : escapeHtml(u.email);
+        const externalIdCell = isEditing ? `<input data-edit-field="externalId" data-id="${u.id}" value="${escapeHtml(u.externalId || '')}" placeholder="External Id">` : '';
+        return `<tr><td>${usernameCell}${isEditing ? `<div class="small">${externalIdCell}</div>` : ''}</td><td>${emailCell}</td><td>${groups}</td><td>${rowActions('user', u)}</td></tr>`;
       }).join('');
     }
 
     function renderGroups(details) {
       groupsBody.innerHTML = details.map(g => {
+        const isEditing = session.isAdmin && editing.groupId === g.id;
         const users = (g.users || []).map(u => `<span class="chip">${u.username}</span>`).join('') || '-';
         const apps = (g.applications || []).map(a => `<span class="chip">${a.name}</span>`).join('') || '-';
-        return `<tr><td>${g.name}</td><td>${users}</td><td>${apps}</td><td>${rowActions('group', g)}</td></tr>`;
+        const nameCell = isEditing ? `<input data-edit-field="name" data-id="${g.id}" value="${escapeHtml(g.name)}">` : escapeHtml(g.name);
+        return `<tr><td>${nameCell}</td><td>${users}</td><td>${apps}</td><td>${rowActions('group', g)}</td></tr>`;
       }).join('');
     }
 
     function renderApps() {
       appsBody.innerHTML = state.apps.map(a => {
+        const isEditing = session.isAdmin && editing.appId === a.id;
         const mode = a.serverAuthoritative ? 'Server Authoritative' : 'Edge Autonomous';
-        return `<tr><td>${a.name}</td><td>${a.balenaAppSlug}</td><td><span class="pill">${mode}</span></td><td>${rowActions('app', a)}</td></tr>`;
+        const nameCell = isEditing ? `<input data-edit-field="name" data-id="${a.id}" value="${escapeHtml(a.name)}">` : escapeHtml(a.name);
+        const slugCell = isEditing ? `<input data-edit-field="balenaAppSlug" data-id="${a.id}" value="${escapeHtml(a.balenaAppSlug)}">` : escapeHtml(a.balenaAppSlug);
+        const enabledCell = isEditing ? `<select data-edit-field="enabled" data-id="${a.id}"><option value="true" ${a.enabled ? 'selected' : ''}>true</option><option value="false" ${!a.enabled ? 'selected' : ''}>false</option></select>` : `<span class="pill">${a.enabled ? 'enabled' : 'disabled'}</span>`;
+        const modeCell = isEditing ? `<select data-edit-field="serverAuthoritative" data-id="${a.id}"><option value="true" ${a.serverAuthoritative ? 'selected' : ''}>Server Authoritative</option><option value="false" ${!a.serverAuthoritative ? 'selected' : ''}>Edge Autonomous</option></select>` : `<span class="pill">${mode}</span>`;
+        return `<tr><td>${nameCell}</td><td>${slugCell}</td><td>${enabledCell} ${modeCell}</td><td>${rowActions('app', a)}</td></tr>`;
       }).join('');
     }
 
     function renderDevices(details) {
       devicesBody.innerHTML = details.map(d => {
+        const isEditing = session.isAdmin && editing.deviceId === d.id;
         const users = (d.assignedUsers || []).map(u => `<span class="chip">${u.username}</span>`).join('') || '-';
-        return `<tr><td>${d.displayName || '-'}</td><td>${d.deviceUuid}</td><td>${users}</td><td>${rowActions('device', d)}</td></tr>`;
+        const nameCell = isEditing ? `<input data-edit-field="displayName" data-id="${d.id}" value="${escapeHtml(d.displayName || '')}">` : escapeHtml(d.displayName || '-');
+        const uuidCell = isEditing ? `<input data-edit-field="deviceUuid" data-id="${d.id}" value="${escapeHtml(d.deviceUuid)}">` : escapeHtml(d.deviceUuid);
+        return `<tr><td>${nameCell}</td><td>${uuidCell}</td><td>${users}</td><td>${rowActions('device', d)}</td></tr>`;
       }).join('');
     }
 
@@ -620,17 +664,6 @@
       }
     }
 
-    async function promptAndRun(title, fields, onSubmit) {
-      const values = [];
-      for (const field of fields) {
-        const value = window.prompt(field.label, field.value ?? '');
-        if (value === null) return;
-        values.push(value);
-      }
-
-      await runAction(() => onSubmit(...values), `${title} updated.`);
-    }
-
     document.addEventListener('click', async event => {
       const target = event.target;
       if (!(target instanceof HTMLElement)) return;
@@ -644,16 +677,25 @@
       }
 
       if (action === 'edit-user') {
-        const item = state.users.find(x => x.id === id);
-        if (!item) return;
-        await promptAndRun('User', [
-          { label: 'External Id', value: item.externalId },
-          { label: 'Username', value: item.username },
-          { label: 'Email', value: item.email }
-        ], (externalId, username, email) => api(`/api/admin/users/${id}`, {
+        editing.userId = id;
+        await loadAll();
+      }
+
+      if (action === 'cancel-user') {
+        clearEditing('user');
+        await loadAll();
+      }
+
+      if (action === 'save-user') {
+        await runAction(() => api(`/api/admin/users/${id}`, {
           method: 'PUT',
-          body: JSON.stringify({ externalId, username, email })
-        }));
+          body: JSON.stringify({
+            externalId: readRowValue(id, 'externalId'),
+            username: readRowValue(id, 'username'),
+            email: readRowValue(id, 'email')
+          })
+        }), 'User updated.');
+        clearEditing('user');
       }
 
       if (action === 'delete-user') {
@@ -662,12 +704,21 @@
       }
 
       if (action === 'edit-group') {
-        const item = state.groups.find(x => x.id === id);
-        if (!item) return;
-        await promptAndRun('Group', [{ label: 'Group Name', value: item.name }], name => api(`/api/admin/groups/${id}`, {
+        editing.groupId = id;
+        await loadAll();
+      }
+
+      if (action === 'cancel-group') {
+        clearEditing('group');
+        await loadAll();
+      }
+
+      if (action === 'save-group') {
+        await runAction(() => api(`/api/admin/groups/${id}`, {
           method: 'PUT',
-          body: JSON.stringify({ name })
-        }));
+          body: JSON.stringify({ name: readRowValue(id, 'name') })
+        }), 'Group updated.');
+        clearEditing('group');
       }
 
       if (action === 'delete-group') {
@@ -676,22 +727,26 @@
       }
 
       if (action === 'edit-app') {
-        const item = state.apps.find(x => x.id === id);
-        if (!item) return;
-        await promptAndRun('Application', [
-          { label: 'Name', value: item.name },
-          { label: 'Balena Slug', value: item.balenaAppSlug },
-          { label: 'Enabled (true/false)', value: String(item.enabled) },
-          { label: 'Server Authoritative (true/false)', value: String(item.serverAuthoritative) }
-        ], (name, balenaAppSlug, enabled, serverAuthoritative) => api(`/api/admin/apps/${id}`, {
+        editing.appId = id;
+        await loadAll();
+      }
+
+      if (action === 'cancel-app') {
+        clearEditing('app');
+        await loadAll();
+      }
+
+      if (action === 'save-app') {
+        await runAction(() => api(`/api/admin/apps/${id}`, {
           method: 'PUT',
           body: JSON.stringify({
-            name,
-            balenaAppSlug,
-            enabled: enabled.toLowerCase() === 'true',
-            serverAuthoritative: serverAuthoritative.toLowerCase() === 'true'
+            name: readRowValue(id, 'name'),
+            balenaAppSlug: readRowValue(id, 'balenaAppSlug'),
+            enabled: readRowValue(id, 'enabled') === 'true',
+            serverAuthoritative: readRowValue(id, 'serverAuthoritative') === 'true'
           })
-        }));
+        }), 'Application updated.');
+        clearEditing('app');
       }
 
       if (action === 'delete-app') {
@@ -700,15 +755,24 @@
       }
 
       if (action === 'edit-device') {
-        const item = state.devices.find(x => x.id === id);
-        if (!item) return;
-        await promptAndRun('Device', [
-          { label: 'Device UUID', value: item.deviceUuid },
-          { label: 'Display Name', value: item.displayName }
-        ], (deviceUuid, displayName) => api(`/api/admin/devices/${id}`, {
+        editing.deviceId = id;
+        await loadAll();
+      }
+
+      if (action === 'cancel-device') {
+        clearEditing('device');
+        await loadAll();
+      }
+
+      if (action === 'save-device') {
+        await runAction(() => api(`/api/admin/devices/${id}`, {
           method: 'PUT',
-          body: JSON.stringify({ deviceUuid, displayName })
-        }));
+          body: JSON.stringify({
+            deviceUuid: readRowValue(id, 'deviceUuid'),
+            displayName: readRowValue(id, 'displayName')
+          })
+        }), 'Device updated.');
+        clearEditing('device');
       }
 
       if (action === 'delete-device') {
