@@ -158,6 +158,24 @@
     body.admin [data-admin-only] { display: revert; }
     body.admin .panel[data-admin-only] { display: block; }
 
+    .mono {
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+      color: var(--ink-1);
+      word-break: break-word;
+    }
+
+    .deploy-output {
+      min-height: 88px;
+      max-height: 180px;
+      overflow: auto;
+      padding: 8px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: rgba(255,255,255,0.7);
+      white-space: pre-wrap;
+    }
+
     @media (max-width: 920px) {
       body { padding: 14px; }
       .token-bar { grid-template-columns: 1fr; }
@@ -196,6 +214,33 @@
     </section>
 
     <div id="status" class="status">Ready.</div>
+
+    <section class="panel" data-admin-only>
+      <h2>Deployment</h2>
+      <div class="panel-body">
+        <div class="status">Check currently running version and deploy latest commit from GitHub.</div>
+        <div class="row-3">
+          <div>
+            <div class="mono">Current release</div>
+            <div id="deployCurrentRelease" class="mono">-</div>
+          </div>
+          <div>
+            <div class="mono">Current commit</div>
+            <div id="deployCurrentCommit" class="mono">-</div>
+          </div>
+          <div>
+            <div class="mono">Latest remote commit</div>
+            <div id="deployLatestCommit" class="mono">-</div>
+          </div>
+        </div>
+        <div class="toolbar">
+          <button class="btn-ghost" id="checkDeployStatusBtn">Check Update Status</button>
+          <button class="btn-primary" id="runDeployBtn">Deploy Latest</button>
+        </div>
+        <div id="deployDiffText" class="mono">-</div>
+        <div id="deployOutput" class="deploy-output mono"></div>
+      </div>
+    </section>
 
     <section class="grid">
       <article class="panel">
@@ -343,6 +388,11 @@
     const groupsBody = document.getElementById('groupsBody');
     const appsBody = document.getElementById('appsBody');
     const devicesBody = document.getElementById('devicesBody');
+    const deployCurrentRelease = document.getElementById('deployCurrentRelease');
+    const deployCurrentCommit = document.getElementById('deployCurrentCommit');
+    const deployLatestCommit = document.getElementById('deployLatestCommit');
+    const deployDiffText = document.getElementById('deployDiffText');
+    const deployOutput = document.getElementById('deployOutput');
 
     const state = { users: [], groups: [], apps: [], devices: [] };
     const session = { accessToken: '', refreshToken: '', idToken: '', roles: [], isAdmin: false, expiresAt: 0 };
@@ -643,9 +693,79 @@
         renderDevices(deviceDetails);
         document.body.classList.toggle('admin', session.isAdmin);
 
+        if (session.isAdmin) {
+          await loadDeployStatus();
+        }
+
         setStatus(session.isAdmin ? 'Data loaded. Admin actions enabled.' : 'Data loaded. Read-only mode active.', 'ok');
       } catch (err) {
         setStatus(`Load failed: ${err.message}`, 'bad');
+      }
+    }
+
+    function setDeployOutput(message) {
+      if (deployOutput) {
+        deployOutput.textContent = message || '';
+      }
+    }
+
+    async function loadDeployStatus() {
+      if (!session.isAdmin || !deployCurrentRelease) {
+        return;
+      }
+
+      try {
+        const result = await api('/api/admin/deploy/status');
+        deployCurrentRelease.textContent = result.currentRelease || '-';
+        deployCurrentCommit.textContent = result.currentCommit || '-';
+        deployLatestCommit.textContent = result.latestCommit || '-';
+
+        if (!result.latestCommit || !result.currentCommit) {
+          deployDiffText.textContent = 'Unable to fully compare commits yet.';
+        } else if (result.updateAvailable) {
+          deployDiffText.textContent = `Update available: ${result.currentCommit} -> ${result.latestCommit}`;
+        } else {
+          deployDiffText.textContent = 'Already on latest commit.';
+        }
+
+        if (!result.canTriggerUpdate) {
+          deployDiffText.textContent += ' Command execution is not enabled on server.';
+        }
+      } catch (err) {
+        deployDiffText.textContent = `Deploy status failed: ${err.message}`;
+      }
+    }
+
+    async function runDeployUpdate() {
+      if (!session.isAdmin) {
+        setStatus('Deploy requires the psn-admin role.', 'bad');
+        return;
+      }
+
+      if (!window.confirm('Run server update now? This will recreate containers with the latest code.')) {
+        return;
+      }
+
+      setDeployOutput('Running deployment command...');
+
+      try {
+        const result = await api('/api/admin/deploy/update', { method: 'POST' });
+        const output = [
+          `success: ${result.success}`,
+          `exitCode: ${result.exitCode}`,
+          '',
+          'stdout:',
+          result.stdOut || '(none)',
+          '',
+          'stderr:',
+          result.stdErr || '(none)'
+        ].join('\n');
+        setDeployOutput(output);
+        await loadDeployStatus();
+        setStatus(result.success ? 'Deployment command completed.' : 'Deployment command failed.', result.success ? 'ok' : 'bad');
+      } catch (err) {
+        setDeployOutput(`Deploy failed: ${err.message}`);
+        setStatus(`Deploy failed: ${err.message}`, 'bad');
       }
     }
 
@@ -817,6 +937,8 @@
     });
 
     document.getElementById('refreshAllBtn').addEventListener('click', loadAll);
+    document.getElementById('checkDeployStatusBtn')?.addEventListener('click', loadDeployStatus);
+    document.getElementById('runDeployBtn')?.addEventListener('click', runDeployUpdate);
     document.getElementById('createUserBtn').addEventListener('click', () => runAction(async () => api('/api/admin/users', {
       method: 'POST',
       body: JSON.stringify({

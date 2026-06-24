@@ -9,6 +9,7 @@ using Platform.Data;
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
+builder.Services.AddHttpClient();
 
 var connectionString = builder.Configuration.GetConnectionString("Default")
     ?? "Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena";
