@@ -75,7 +75,7 @@ services:
 
   admin-api:
     image: ${ADMIN_API_IMAGE:-ghcr.io/atunbey/private-solutions-network-server/admin-api}:${PSN_RELEASE:-2026.06.23.1}
-    pull_policy: always
+    pull_policy: if_not_present
     container_name: psn-server-admin-api
     restart: unless-stopped
     environment:
@@ -101,7 +101,7 @@ services:
 
   policy-api:
     image: ${POLICY_API_IMAGE:-ghcr.io/atunbey/private-solutions-network-server/policy-api}:${PSN_RELEASE:-2026.06.23.1}
-    pull_policy: always
+    pull_policy: if_not_present
     container_name: psn-server-policy-api
     restart: unless-stopped
     environment:
@@ -127,7 +127,7 @@ services:
 
   balena-orchestrator:
     image: ${ORCHESTRATOR_IMAGE:-ghcr.io/atunbey/private-solutions-network-server/balena-orchestrator}:${PSN_RELEASE:-2026.06.23.1}
-    pull_policy: always
+    pull_policy: if_not_present
     container_name: psn-server-orchestrator
     restart: unless-stopped
     environment:
