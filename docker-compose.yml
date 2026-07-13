@@ -80,6 +80,8 @@ services:
     restart: unless-stopped
     environment:
       ASPNETCORE_ENVIRONMENT: Production
+      Balena__ApiBase: ${BALENA_API_BASE:-}
+      Balena__ApiToken: ${BALENA_API_TOKEN:-}
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
       Jwt__Authority: http://keycloak:8080/realms/private-solutions-network
       Jwt__Audience: account

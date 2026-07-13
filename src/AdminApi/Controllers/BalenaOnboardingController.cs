@@ -12,19 +12,27 @@ namespace AdminApi.Controllers;
 [ApiController]
 [Route("api/admin/balena/onboarding")]
 [Authorize(Roles = "psn-admin")]
-public class BalenaOnboardingController(AppDbContext dbContext, IHttpClientFactory httpClientFactory) : ControllerBase
+public class BalenaOnboardingController(AppDbContext dbContext, IHttpClientFactory httpClientFactory, IConfiguration configuration) : ControllerBase
 {
     [HttpPost("discover")]
     public async Task<IActionResult> DiscoverDevices([FromBody] BalenaDeviceDiscoveryRequest request, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request.ApiBaseUrl))
+        var apiBaseUrl = string.IsNullOrWhiteSpace(request.ApiBaseUrl)
+            ? configuration["Balena:ApiBase"] ?? Environment.GetEnvironmentVariable("BALENA_API_BASE")
+            : request.ApiBaseUrl.Trim();
+
+        var adminToken = string.IsNullOrWhiteSpace(request.AdminToken)
+            ? configuration["Balena:ApiToken"] ?? Environment.GetEnvironmentVariable("BALENA_API_TOKEN")
+            : request.AdminToken.Trim();
+
+        if (string.IsNullOrWhiteSpace(apiBaseUrl))
         {
-            return BadRequest(new { message = "ApiBaseUrl is required." });
+            return BadRequest(new { message = "ApiBaseUrl is required. Provide it in the request or configure Balena:ApiBase / BALENA_API_BASE." });
         }
 
-        if (string.IsNullOrWhiteSpace(request.AdminToken))
+        if (string.IsNullOrWhiteSpace(adminToken))
         {
-            return BadRequest(new { message = "AdminToken is required." });
+            return BadRequest(new { message = "AdminToken is required. Provide it in the request or configure Balena:ApiToken / BALENA_API_TOKEN." });
         }
 
         var registeredDevices = await dbContext.Devices
@@ -34,7 +42,7 @@ public class BalenaOnboardingController(AppDbContext dbContext, IHttpClientFacto
             .Select(d => new BalenaRegisteredDeviceSummary(d.Id, d.DeviceUuid, d.DisplayName))
             .ToListAsync(cancellationToken);
 
-        var pulledDevices = await FetchBalenaDevicesAsync(request.ApiBaseUrl.Trim(), request.AdminToken.Trim(), cancellationToken);
+        var pulledDevices = await FetchBalenaDevicesAsync(apiBaseUrl, adminToken, cancellationToken);
 
         var registeredUuids = new HashSet<string>(
             registeredDevices.Select(d => d.DeviceUuid.Trim()),

@@ -229,11 +229,11 @@
         <div class="row-3">
           <div class="field">
             <div class="field-label">OpenBalena API URL</div>
-            <input id="balenaApiBase" placeholder="https://api.ob.atun-bey.com">
+            <input id="balenaApiBase" placeholder="Uses server default if left blank">
           </div>
           <div class="field">
             <div class="field-label">OpenBalena admin token</div>
-            <input id="balenaAdminToken" type="password" placeholder="Paste OpenBalena admin token">
+            <input id="balenaAdminToken" type="password" placeholder="Uses server default if left blank">
           </div>
           <div class="actions" style="align-items:end;">
             <button class="btn-primary" id="pullBalenaDevicesBtn">Pull OpenBalena devices</button>
@@ -354,6 +354,8 @@
     let lastDiscoveryRequest = null;
     const storedToken = localStorage.getItem('psn_admin_token') || '';
     const storedBalenaApiBase = localStorage.getItem('psn_balena_api_base') || '';
+    const storedBalenaAdminToken = sessionStorage.getItem('psn_balena_admin_token') || '';
+    const defaultBalenaApiBase = 'https://api.ob.atun-bey.com';
 
     function setStatus(message, kind = 'ok') {
       statusEl.textContent = message;
@@ -632,18 +634,18 @@
       const apiBaseUrl = balenaApiBaseInput.value.trim();
       const adminToken = balenaAdminTokenInput.value.trim();
 
-      if (!apiBaseUrl || !adminToken) {
-        setStatus('Enter OpenBalena API URL and admin token first.', 'bad');
-        return;
-      }
-
       const result = await api('/api/admin/balena/onboarding/discover', {
         method: 'POST',
         body: JSON.stringify({ apiBaseUrl, adminToken })
       });
 
       lastDiscoveryRequest = { apiBaseUrl, adminToken };
-      localStorage.setItem('psn_balena_api_base', apiBaseUrl);
+      if (apiBaseUrl) {
+        localStorage.setItem('psn_balena_api_base', apiBaseUrl);
+      }
+      if (adminToken) {
+        sessionStorage.setItem('psn_balena_admin_token', adminToken);
+      }
       renderDiscovery(result);
       setStatus(`Pulled OpenBalena devices. Found ${result.discoveredDevices.length} not yet added to PSN Admin.`, 'ok');
     }
@@ -767,8 +769,9 @@
         applyStoredToken(storedToken);
       }
 
-      if (storedBalenaApiBase) {
-        balenaApiBaseInput.value = storedBalenaApiBase;
+      balenaApiBaseInput.value = storedBalenaApiBase || defaultBalenaApiBase;
+      if (storedBalenaAdminToken) {
+        balenaAdminTokenInput.value = storedBalenaAdminToken;
       }
 
       if (session.accessToken) {
