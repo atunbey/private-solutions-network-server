@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Platform.Data;
 using Platform.Data.Entities;
 using Shared.Contracts.Admin;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text.Json;
 
@@ -42,7 +43,19 @@ public class BalenaOnboardingController(AppDbContext dbContext, IHttpClientFacto
             .Select(d => new BalenaRegisteredDeviceSummary(d.Id, d.DeviceUuid, d.DisplayName))
             .ToListAsync(cancellationToken);
 
-        var pulledDevices = await FetchBalenaDevicesAsync(apiBaseUrl, adminToken, cancellationToken);
+        List<BalenaDiscoveredDeviceSummary> pulledDevices;
+        try
+        {
+            pulledDevices = await FetchBalenaDevicesAsync(apiBaseUrl, adminToken, cancellationToken);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(StatusCodes.Status502BadGateway, new
+            {
+                message = "Could not pull devices from openBalena. Check Balena API reachability, token, and API base URL.",
+                details = ex.Message
+            });
+        }
 
         var registeredUuids = new HashSet<string>(
             registeredDevices.Select(d => d.DeviceUuid.Trim()),
@@ -264,7 +277,7 @@ curl -fsSL "$INSTALLER_URL" | sudo bash -s -- \
         foreach (var path in paths)
         {
             var endpoint = BuildApiEndpoint(apiBaseUrl, path);
-            using var response = await client.GetAsync(endpoint, cancellationToken);
+            using var response = await GetWithRetriesAsync(client, endpoint, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
 
             if (!response.IsSuccessStatusCode)
@@ -282,6 +295,43 @@ curl -fsSL "$INSTALLER_URL" | sudo bash -s -- \
         }
 
         throw new InvalidOperationException($"Could not pull devices from openBalena. {lastError}");
+    }
+
+    private static async Task<HttpResponseMessage> GetWithRetriesAsync(HttpClient client, string endpoint, CancellationToken cancellationToken)
+    {
+        const int maxAttempts = 3;
+        var delay = TimeSpan.FromMilliseconds(300);
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            try
+            {
+                return await client.GetAsync(endpoint, cancellationToken);
+            }
+            catch (HttpRequestException ex) when (attempt < maxAttempts)
+            {
+                var socketError = ex.InnerException as System.Net.Sockets.SocketException;
+                var canRetry = socketError?.SocketErrorCode == System.Net.Sockets.SocketError.TryAgain
+                               || socketError?.SocketErrorCode == System.Net.Sockets.SocketError.TimedOut
+                               || socketError?.SocketErrorCode == System.Net.Sockets.SocketError.HostNotFound
+                               || socketError?.SocketErrorCode == System.Net.Sockets.SocketError.NetworkUnreachable;
+
+                if (!canRetry)
+                {
+                    throw;
+                }
+
+                await Task.Delay(delay, cancellationToken);
+                delay += delay;
+            }
+            catch (TaskCanceledException) when (attempt < maxAttempts && !cancellationToken.IsCancellationRequested)
+            {
+                await Task.Delay(delay, cancellationToken);
+                delay += delay;
+            }
+        }
+
+        throw new InvalidOperationException($"Could not reach openBalena endpoint {endpoint} after multiple attempts.");
     }
 
     private static string BuildApiEndpoint(string apiBaseUrl, string path)
