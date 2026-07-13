@@ -36,3 +36,20 @@ public record BalenaOnboardingApplicationSummary(
 public record BalenaOnboardingChecklistItem(string Title, string Detail);
 
 public record BalenaOnboardingEndpointSummary(string System, string Method, string Path, string Purpose);
+
+public record BalenaDeviceDiscoveryRequest(string ApiBaseUrl, string AdminToken);
+
+public record BalenaRegisteredDeviceSummary(Guid Id, string DeviceUuid, string DisplayName);
+
+public record BalenaDiscoveredDeviceSummary(
+    string DeviceUuid,
+    string DisplayName,
+    string? BalenaDeviceId,
+    bool? IsOnline,
+    string? Status);
+
+public record BalenaDeviceDiscoveryResponse(
+    IReadOnlyList<BalenaRegisteredDeviceSummary> RegisteredDevices,
+    IReadOnlyList<BalenaDiscoveredDeviceSummary> DiscoveredDevices);
+
+public record RegisterDiscoveredDeviceRequest(string DeviceUuid, string DisplayName);

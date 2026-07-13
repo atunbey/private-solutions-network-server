@@ -2,15 +2,92 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Platform.Data;
+using Platform.Data.Entities;
 using Shared.Contracts.Admin;
+using System.Net.Http.Headers;
+using System.Text.Json;
 
 namespace AdminApi.Controllers;
 
 [ApiController]
 [Route("api/admin/balena/onboarding")]
 [Authorize(Roles = "psn-admin")]
-public class BalenaOnboardingController(AppDbContext dbContext) : ControllerBase
+public class BalenaOnboardingController(AppDbContext dbContext, IHttpClientFactory httpClientFactory) : ControllerBase
 {
+    [HttpPost("discover")]
+    public async Task<IActionResult> DiscoverDevices([FromBody] BalenaDeviceDiscoveryRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.ApiBaseUrl))
+        {
+            return BadRequest(new { message = "ApiBaseUrl is required." });
+        }
+
+        if (string.IsNullOrWhiteSpace(request.AdminToken))
+        {
+            return BadRequest(new { message = "AdminToken is required." });
+        }
+
+        var registeredDevices = await dbContext.Devices
+            .AsNoTracking()
+            .OrderBy(d => d.DisplayName)
+            .ThenBy(d => d.DeviceUuid)
+            .Select(d => new BalenaRegisteredDeviceSummary(d.Id, d.DeviceUuid, d.DisplayName))
+            .ToListAsync(cancellationToken);
+
+        var pulledDevices = await FetchBalenaDevicesAsync(request.ApiBaseUrl.Trim(), request.AdminToken.Trim(), cancellationToken);
+
+        var registeredUuids = new HashSet<string>(
+            registeredDevices.Select(d => d.DeviceUuid.Trim()),
+            StringComparer.OrdinalIgnoreCase);
+
+        var discoveredDevices = pulledDevices
+            .Where(d => !registeredUuids.Contains(d.DeviceUuid.Trim()))
+            .OrderBy(d => d.DisplayName)
+            .ThenBy(d => d.DeviceUuid)
+            .ToList();
+
+        return Ok(new BalenaDeviceDiscoveryResponse(registeredDevices, discoveredDevices));
+    }
+
+    [HttpPost("register")]
+    public async Task<IActionResult> RegisterDiscoveredDevice([FromBody] RegisterDiscoveredDeviceRequest request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.DeviceUuid))
+        {
+            return BadRequest(new { message = "DeviceUuid is required." });
+        }
+
+        var deviceUuid = request.DeviceUuid.Trim();
+        var displayName = request.DisplayName?.Trim() ?? string.Empty;
+
+        if (await dbContext.Devices.AnyAsync(d => d.DeviceUuid == deviceUuid, cancellationToken))
+        {
+            return Conflict(new { message = "A device with that UUID already exists." });
+        }
+
+        var device = new Device
+        {
+            DeviceUuid = deviceUuid,
+            DisplayName = displayName
+        };
+
+        dbContext.Devices.Add(device);
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            Actor = ActorName(),
+            Action = "device.register.from_openbalena",
+            Details = deviceUuid
+        });
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return CreatedAtAction(
+            nameof(DevicesController.GetDevice),
+            "Devices",
+            new { id = device.Id },
+            new DeviceResponse(device.Id, device.DeviceUuid, device.DisplayName));
+    }
+
     [HttpPost("plan")]
     public async Task<IActionResult> BuildPlan([FromBody] BalenaOnboardingRequest request, CancellationToken cancellationToken)
     {
@@ -160,4 +237,162 @@ curl -fsSL "$INSTALLER_URL" | sudo bash -s -- \
   --registration-token "$REGISTRATION_TOKEN"
 """;
     }
+
+    private async Task<List<BalenaDiscoveredDeviceSummary>> FetchBalenaDevicesAsync(string apiBaseUrl, string adminToken, CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(30);
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", adminToken);
+        client.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+        var paths = new[]
+        {
+            "/v6/device?$select=id,uuid,device_name,is_online,status",
+            "/v6/device"
+        };
+
+        var lastError = string.Empty;
+
+        foreach (var path in paths)
+        {
+            var endpoint = BuildApiEndpoint(apiBaseUrl, path);
+            using var response = await client.GetAsync(endpoint, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+            if (!response.IsSuccessStatusCode)
+            {
+                lastError = $"{(int)response.StatusCode} {response.ReasonPhrase} | {body}";
+                continue;
+            }
+
+            if (TryExtractBalenaDevices(body, out var devices) && devices.Count > 0)
+            {
+                return devices;
+            }
+
+            lastError = "The API response did not contain any parseable devices.";
+        }
+
+        throw new InvalidOperationException($"Could not pull devices from openBalena. {lastError}");
+    }
+
+    private static string BuildApiEndpoint(string apiBaseUrl, string path)
+    {
+        var baseUrl = apiBaseUrl.Trim().TrimEnd('/');
+        if (!baseUrl.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            && !baseUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+        {
+            baseUrl = $"https://{baseUrl}";
+        }
+
+        return $"{baseUrl}{path}";
+    }
+
+    private static bool TryExtractBalenaDevices(string payload, out List<BalenaDiscoveredDeviceSummary> devices)
+    {
+        devices = [];
+
+        if (string.IsNullOrWhiteSpace(payload))
+        {
+            return false;
+        }
+
+        using var document = JsonDocument.Parse(payload);
+        var root = document.RootElement;
+
+        IEnumerable<JsonElement> sourceItems = [];
+
+        if (root.ValueKind == JsonValueKind.Array)
+        {
+            sourceItems = root.EnumerateArray();
+        }
+        else if (root.ValueKind == JsonValueKind.Object)
+        {
+            if (root.TryGetProperty("d", out var dNode) && dNode.ValueKind == JsonValueKind.Array)
+            {
+                sourceItems = dNode.EnumerateArray();
+            }
+            else if (root.TryGetProperty("d", out var dWrapper)
+                     && dWrapper.ValueKind == JsonValueKind.Object
+                     && dWrapper.TryGetProperty("results", out var results)
+                     && results.ValueKind == JsonValueKind.Array)
+            {
+                sourceItems = results.EnumerateArray();
+            }
+            else if (root.TryGetProperty("data", out var dataNode) && dataNode.ValueKind == JsonValueKind.Array)
+            {
+                sourceItems = dataNode.EnumerateArray();
+            }
+        }
+
+        var seenUuids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in sourceItems)
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                continue;
+            }
+
+            var uuid = GetString(item, "uuid") ?? GetString(item, "device_uuid");
+            if (string.IsNullOrWhiteSpace(uuid) || !seenUuids.Add(uuid.Trim()))
+            {
+                continue;
+            }
+
+            var displayName = GetString(item, "device_name")
+                              ?? GetString(item, "deviceName")
+                              ?? uuid;
+
+            var balenaId = GetString(item, "id");
+            var status = GetString(item, "status");
+            var isOnline = GetBool(item, "is_online") ?? GetBool(item, "isOnline");
+
+            devices.Add(new BalenaDiscoveredDeviceSummary(
+                uuid.Trim(),
+                displayName?.Trim() ?? uuid.Trim(),
+                balenaId,
+                isOnline,
+                status));
+        }
+
+        return true;
+    }
+
+    private static string? GetString(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.String => property.GetString(),
+            JsonValueKind.Number => property.GetRawText(),
+            JsonValueKind.True => "true",
+            JsonValueKind.False => "false",
+            _ => null
+        };
+    }
+
+    private static bool? GetBool(JsonElement element, string propertyName)
+    {
+        if (!element.TryGetProperty(propertyName, out var property))
+        {
+            return null;
+        }
+
+        return property.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.Number when property.TryGetInt32(out var intValue) => intValue != 0,
+            JsonValueKind.String when bool.TryParse(property.GetString(), out var boolValue) => boolValue,
+            JsonValueKind.String when int.TryParse(property.GetString(), out var stringIntValue) => stringIntValue != 0,
+            _ => null
+        };
+    }
+
+    private string ActorName() => User.Identity?.Name ?? "system";
 }

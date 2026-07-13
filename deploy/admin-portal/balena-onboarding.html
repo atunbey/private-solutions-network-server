@@ -224,6 +224,51 @@
     <div id="status" class="status">Sign in with Keycloak to load onboarding data.</div>
 
     <section class="panel">
+      <h2>OpenBalena Device Discovery</h2>
+      <div class="panel-body">
+        <div class="row-3">
+          <div class="field">
+            <div class="field-label">OpenBalena API URL</div>
+            <input id="balenaApiBase" placeholder="https://api.ob.atun-bey.com">
+          </div>
+          <div class="field">
+            <div class="field-label">OpenBalena admin token</div>
+            <input id="balenaAdminToken" type="password" placeholder="Paste OpenBalena admin token">
+          </div>
+          <div class="actions" style="align-items:end;">
+            <button class="btn-primary" id="pullBalenaDevicesBtn">Pull OpenBalena devices</button>
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="list-card">
+            <div class="summary-title">Devices already in PSN Admin</div>
+            <div class="scroll" style="margin-top:10px;">
+              <table>
+                <thead>
+                  <tr><th>Display Name</th><th>UUID</th></tr>
+                </thead>
+                <tbody id="registeredDevicesBody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="list-card">
+            <div class="summary-title">Devices in OpenBalena not yet added</div>
+            <div class="scroll" style="margin-top:10px;">
+              <table>
+                <thead>
+                  <tr><th>Display Name</th><th>UUID</th><th>Status</th><th>Action</th></tr>
+                </thead>
+                <tbody id="discoveredDevicesBody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel">
       <h2>Selected Client</h2>
       <div class="panel-body">
         <div class="summary-grid">
@@ -290,6 +335,11 @@
     const installerUrlInput = document.getElementById('installerUrl');
     const registrationTokenInput = document.getElementById('registrationToken');
     const serviceNameInput = document.getElementById('serviceName');
+    const balenaApiBaseInput = document.getElementById('balenaApiBase');
+    const balenaAdminTokenInput = document.getElementById('balenaAdminToken');
+    const pullBalenaDevicesBtn = document.getElementById('pullBalenaDevicesBtn');
+    const registeredDevicesBody = document.getElementById('registeredDevicesBody');
+    const discoveredDevicesBody = document.getElementById('discoveredDevicesBody');
     const deviceSummary = document.getElementById('deviceSummary');
     const userSummary = document.getElementById('userSummary');
     const hostShellSummary = document.getElementById('hostShellSummary');
@@ -301,7 +351,9 @@
 
     const session = { accessToken: '', refreshToken: '', idToken: '', roles: [], isAdmin: false, expiresAt: 0 };
     let lastPlan = null;
+    let lastDiscoveryRequest = null;
     const storedToken = localStorage.getItem('psn_admin_token') || '';
+    const storedBalenaApiBase = localStorage.getItem('psn_balena_api_base') || '';
 
     function setStatus(message, kind = 'ok') {
       statusEl.textContent = message;
@@ -540,6 +592,81 @@
         </tr>`).join('');
     }
 
+    function renderDiscovery(result) {
+      const registeredDevices = result?.registeredDevices || [];
+      const discoveredDevices = result?.discoveredDevices || [];
+
+      registeredDevicesBody.innerHTML = registeredDevices.length
+        ? registeredDevices.map(d => `
+          <tr>
+            <td>${d.displayName || '-'}</td>
+            <td class="mono">${d.deviceUuid}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="2" class="small">No devices registered in PSN Admin yet.</td></tr>';
+
+      discoveredDevicesBody.innerHTML = discoveredDevices.length
+        ? discoveredDevices.map(d => `
+          <tr>
+            <td>${d.displayName || '-'}</td>
+            <td class="mono">${d.deviceUuid}</td>
+            <td>${d.status || (d.isOnline === true ? 'online' : d.isOnline === false ? 'offline' : '-')}</td>
+            <td>
+              <button
+                class="btn-primary"
+                data-action="register-discovered-device"
+                data-uuid="${d.deviceUuid}"
+                data-name="${(d.displayName || '').replace(/"/g, '&quot;')}">
+                Register
+              </button>
+            </td>
+          </tr>`).join('')
+        : '<tr><td colspan="4" class="small">No unregistered devices found in OpenBalena.</td></tr>';
+    }
+
+    async function pullBalenaDevices() {
+      if (!session.isAdmin) {
+        setStatus('OpenBalena discovery requires the psn-admin role.', 'bad');
+        return;
+      }
+
+      const apiBaseUrl = balenaApiBaseInput.value.trim();
+      const adminToken = balenaAdminTokenInput.value.trim();
+
+      if (!apiBaseUrl || !adminToken) {
+        setStatus('Enter OpenBalena API URL and admin token first.', 'bad');
+        return;
+      }
+
+      const result = await api('/api/admin/balena/onboarding/discover', {
+        method: 'POST',
+        body: JSON.stringify({ apiBaseUrl, adminToken })
+      });
+
+      lastDiscoveryRequest = { apiBaseUrl, adminToken };
+      localStorage.setItem('psn_balena_api_base', apiBaseUrl);
+      renderDiscovery(result);
+      setStatus(`Pulled OpenBalena devices. Found ${result.discoveredDevices.length} not yet added to PSN Admin.`, 'ok');
+    }
+
+    async function registerDiscoveredDevice(deviceUuid, displayName) {
+      await api('/api/admin/balena/onboarding/register', {
+        method: 'POST',
+        body: JSON.stringify({ deviceUuid, displayName })
+      });
+
+      await loadSelectors();
+
+      if (lastDiscoveryRequest) {
+        const refreshed = await api('/api/admin/balena/onboarding/discover', {
+          method: 'POST',
+          body: JSON.stringify(lastDiscoveryRequest)
+        });
+        renderDiscovery(refreshed);
+      }
+
+      setStatus(`Registered ${deviceUuid} in PSN Admin.`, 'ok');
+    }
+
     async function loadSelectors() {
       const [users, devices] = await Promise.all([
         api('/api/admin/users'),
@@ -616,6 +743,18 @@
       }
       copyText(lastPlan.hostShellCommand, 'SSH command').catch(err => setStatus(`Copy failed: ${err.message}`, 'bad'));
     });
+    pullBalenaDevicesBtn.addEventListener('click', () => pullBalenaDevices().catch(err => setStatus(`Device pull failed: ${err.message}`, 'bad')));
+    discoveredDevicesBody.addEventListener('click', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement)) return;
+      if (target.dataset.action !== 'register-discovered-device') return;
+
+      const deviceUuid = target.dataset.uuid || '';
+      const displayName = target.dataset.name || '';
+      if (!deviceUuid) return;
+
+      registerDiscoveredDevice(deviceUuid, displayName).catch(err => setStatus(`Register failed: ${err.message}`, 'bad'));
+    });
 
     (async () => {
       try {
@@ -626,6 +765,10 @@
 
       if (!session.accessToken && storedToken) {
         applyStoredToken(storedToken);
+      }
+
+      if (storedBalenaApiBase) {
+        balenaApiBaseInput.value = storedBalenaApiBase;
       }
 
       if (session.accessToken) {
