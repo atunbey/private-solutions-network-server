@@ -24,11 +24,14 @@
       "serviceAccountsEnabled": false,
       "protocol": "openid-connect",
       "redirectUris": [
+        "https://psnadmin.atun-bey.com/*",
+        "https://www.atun-bey.com/PSNadmin*",
         "http://localhost/*",
         "http://127.0.0.1/*"
       ],
       "webOrigins": [
-        "+"
+        "https://psnadmin.atun-bey.com",
+        "https://www.atun-bey.com"
       ],
       "attributes": {
         "pkce.code.challenge.method": "S256"

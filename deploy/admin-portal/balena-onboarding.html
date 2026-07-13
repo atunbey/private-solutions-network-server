@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Balena Onboarding Console</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-0: #f3efe4;
+      --bg-1: #dfe9e4;
+      --bg-2: #f6f8f4;
+      --ink-0: #17201d;
+      --ink-1: #52605b;
+      --accent-0: #0f7b60;
+      --accent-1: #d88c3c;
+      --surface: rgba(255,255,255,0.84);
+      --line: rgba(40,60,50,0.14);
+      --ok: #127a40;
+      --danger: #b02d31;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink-0);
+      font-family: "Space Grotesk", sans-serif;
+      background:
+        radial-gradient(900px 500px at 0% 0%, rgba(15,123,96,0.14), transparent 62%),
+        radial-gradient(700px 420px at 100% 0%, rgba(216,140,60,0.14), transparent 58%),
+        linear-gradient(145deg, var(--bg-0), var(--bg-1) 50%, var(--bg-2));
+      padding: 24px;
+    }
+
+    .shell {
+      max-width: 1320px;
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+
+    .hero, .panel, .status {
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--surface);
+      box-shadow: 0 14px 38px rgba(18,28,24,0.10);
+      backdrop-filter: blur(4px);
+    }
+
+    .hero {
+      padding: 20px 22px;
+      display: grid;
+      gap: 10px;
+    }
+
+    .hero h1 { margin: 0; font-size: clamp(1.35rem, 2.6vw, 2.4rem); }
+    .hero p { margin: 0; color: var(--ink-1); max-width: 920px; }
+
+    .topline {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+      color: var(--ink-1);
+      font-family: "IBM Plex Mono", monospace;
+      font-size: 0.78rem;
+    }
+
+    .badge, .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      background: rgba(255,255,255,0.64);
+    }
+
+    .toolbar, .row, .row-2, .row-3 {
+      display: grid;
+      gap: 10px;
+    }
+
+    .toolbar {
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      align-items: end;
+    }
+
+    .row { grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+    .row-2 { grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); }
+    .row-3 { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
+
+    .field { display: grid; gap: 4px; }
+    .field-label { font-size: 0.75rem; color: var(--ink-1); }
+
+    input, select, button, textarea {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font: inherit;
+      color: inherit;
+      background: white;
+    }
+
+    input, select, textarea { font-family: "IBM Plex Mono", monospace; }
+    textarea { min-height: 280px; resize: vertical; }
+    button { cursor: pointer; font-weight: 700; transition: transform 0.14s ease, opacity 0.14s ease; }
+    button:hover { transform: translateY(-1px); }
+
+    .btn-primary { background: var(--accent-0); color: white; border-color: var(--accent-0); }
+    .btn-ghost { background: rgba(255,255,255,0.7); }
+
+    .status {
+      min-height: 48px;
+      padding: 12px 14px;
+      color: var(--ink-1);
+      font-family: "IBM Plex Mono", monospace;
+      white-space: pre-wrap;
+    }
+
+    .status.ok { color: var(--ok); }
+    .status.bad { color: var(--danger); }
+
+    .panel { overflow: hidden; }
+    .panel h2 {
+      margin: 0;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255,255,255,0.46);
+      font-size: 1rem;
+    }
+    .panel-body { padding: 12px; display: grid; gap: 12px; }
+
+    .summary-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 12px;
+    }
+
+    .summary-card, .list-card {
+      padding: 12px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: rgba(255,255,255,0.72);
+    }
+
+    .summary-title { font-size: 0.75rem; color: var(--ink-1); text-transform: uppercase; letter-spacing: 0.04em; }
+    .summary-value { margin-top: 6px; word-break: break-word; font-family: "IBM Plex Mono", monospace; font-size: 0.88rem; }
+
+    .scroll {
+      max-height: 280px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid rgba(0,0,0,0.06); vertical-align: top; }
+    th { color: var(--ink-1); font-size: 0.74rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .mono { font-family: "IBM Plex Mono", monospace; }
+    .checklist { display: grid; gap: 10px; }
+    .check-item { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,0.72); }
+    .check-item h3 { margin: 0 0 4px 0; font-size: 0.92rem; }
+    .check-item p { margin: 0; color: var(--ink-1); }
+    .small { color: var(--ink-1); font-size: 0.8rem; }
+
+    @media (max-width: 920px) {
+      body { padding: 14px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <section class="hero">
+      <div class="topline">
+        <span class="badge" id="modeBadge">mode: signed out</span>
+        <span class="badge" id="roleBadge">role: none</span>
+        <span class="badge">balena onboarding</span>
+        <a class="badge" href="/">back to dashboard</a>
+      </div>
+      <h1>Balena Onboarding Console</h1>
+      <p>Pick a device and assigned user, then generate the SSH runbook and installer script needed to place the client software onto the node and tie it back to the admin server.</p>
+    </section>
+
+    <section class="toolbar">
+      <div class="actions">
+        <button class="btn-primary" id="loginBtn">Login with Keycloak</button>
+        <button class="btn-ghost" id="logoutBtn">Logout</button>
+      </div>
+      <div class="field">
+        <div class="field-label">Device</div>
+        <select id="deviceSelect"></select>
+      </div>
+      <div class="field">
+        <div class="field-label">User</div>
+        <select id="userSelect"></select>
+      </div>
+      <div class="field">
+        <div class="field-label">Installer URL</div>
+        <input id="installerUrl" placeholder="https://server.example/client/install.sh">
+      </div>
+      <div class="field">
+        <div class="field-label">Registration token</div>
+        <input id="registrationToken" placeholder="client-registration-token">
+      </div>
+      <div class="field">
+        <div class="field-label">Service name</div>
+        <input id="serviceName" value="main">
+      </div>
+      <div class="actions">
+        <button class="btn-primary" id="buildPlanBtn">Build onboarding plan</button>
+        <button class="btn-ghost" id="copyScriptBtn">Copy script</button>
+        <button class="btn-ghost" id="copyHostBtn">Copy SSH</button>
+      </div>
+    </section>
+
+    <div id="status" class="status">Sign in with Keycloak to load onboarding data.</div>
+
+    <section class="panel">
+      <h2>Selected Client</h2>
+      <div class="panel-body">
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-title">Device</div>
+            <div id="deviceSummary" class="summary-value">-</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-title">User</div>
+            <div id="userSummary" class="summary-value">-</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-title">Host shell</div>
+            <div id="hostShellSummary" class="summary-value">-</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-title">Service shell</div>
+            <div id="serviceShellSummary" class="summary-value">-</div>
+          </div>
+        </div>
+
+        <div class="row-2">
+          <div class="list-card">
+            <div class="summary-title">Groups and allowed apps</div>
+            <div id="groupSummary" class="small" style="margin-top:10px;">-</div>
+          </div>
+          <div class="list-card">
+            <div class="summary-title">Checklist</div>
+            <div id="checklist" class="checklist" style="margin-top:10px;"></div>
+          </div>
+        </div>
+
+        <div class="list-card">
+          <div class="summary-title">API surface to hit during onboarding</div>
+          <div class="scroll" style="margin-top:10px;">
+            <table>
+              <thead>
+                <tr><th>System</th><th>Method</th><th>Path</th><th>Purpose</th></tr>
+              </thead>
+              <tbody id="endpointsBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="list-card">
+          <div class="summary-title">Installer script</div>
+          <textarea id="installScript" readonly spellcheck="false"></textarea>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const REALM = 'private-solutions-network';
+    const CLIENT_ID = 'psn-admin-portal';
+    const AUTH_BASE = `${window.location.origin}/auth`;
+    const REDIRECT_URI = `${window.location.origin}${window.location.pathname}`;
+
+    const statusEl = document.getElementById('status');
+    const modeBadge = document.getElementById('modeBadge');
+    const roleBadge = document.getElementById('roleBadge');
+    const deviceSelect = document.getElementById('deviceSelect');
+    const userSelect = document.getElementById('userSelect');
+    const installerUrlInput = document.getElementById('installerUrl');
+    const registrationTokenInput = document.getElementById('registrationToken');
+    const serviceNameInput = document.getElementById('serviceName');
+    const deviceSummary = document.getElementById('deviceSummary');
+    const userSummary = document.getElementById('userSummary');
+    const hostShellSummary = document.getElementById('hostShellSummary');
+    const serviceShellSummary = document.getElementById('serviceShellSummary');
+    const groupSummary = document.getElementById('groupSummary');
+    const checklistEl = document.getElementById('checklist');
+    const endpointsBody = document.getElementById('endpointsBody');
+    const installScript = document.getElementById('installScript');
+
+    const session = { accessToken: '', refreshToken: '', idToken: '', roles: [], isAdmin: false, expiresAt: 0 };
+    let lastPlan = null;
+    const storedToken = localStorage.getItem('psn_admin_token') || '';
+
+    function setStatus(message, kind = 'ok') {
+      statusEl.textContent = message;
+      statusEl.classList.remove('ok', 'bad');
+      statusEl.classList.add(kind === 'bad' ? 'bad' : 'ok');
+    }
+
+    function decodeBase64Url(value) {
+      const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+      const padded = normalized + '='.repeat((4 - (normalized.length % 4)) % 4);
+      return atob(padded);
+    }
+
+    function parseJwt(token) {
+      return JSON.parse(decodeBase64Url(token.split('.')[1]));
+    }
+
+    function extractRoles(payload) {
+      const roles = new Set();
+      (payload?.realm_access?.roles || []).forEach(role => roles.add(role));
+      (payload?.resource_access?.[CLIENT_ID]?.roles || []).forEach(role => roles.add(role));
+      return [...roles].filter(Boolean);
+    }
+
+    function applySession(tokenResponse) {
+      session.accessToken = tokenResponse.access_token || '';
+      session.refreshToken = tokenResponse.refresh_token || '';
+      session.idToken = tokenResponse.id_token || '';
+
+      if (session.accessToken) {
+        const payload = parseJwt(session.accessToken);
+        session.roles = extractRoles(payload);
+        session.isAdmin = session.roles.includes('psn-admin');
+        session.expiresAt = (payload.exp || 0) * 1000;
+      }
+
+      modeBadge.textContent = session.accessToken ? (session.isAdmin ? 'mode: admin' : 'mode: read-only') : 'mode: signed out';
+      roleBadge.textContent = session.accessToken ? `role: ${session.roles.join(', ') || 'authenticated'}` : 'role: none';
+    }
+
+    function clearSession() {
+      session.accessToken = '';
+      session.refreshToken = '';
+      session.idToken = '';
+      session.roles = [];
+      session.isAdmin = false;
+      session.expiresAt = 0;
+      localStorage.removeItem('psn_admin_token');
+      sessionStorage.removeItem('psn_pkce_verifier');
+      sessionStorage.removeItem('psn_oidc_state');
+      modeBadge.textContent = 'mode: signed out';
+      roleBadge.textContent = 'role: none';
+    }
+
+    function applyStoredToken(token) {
+      if (!token) {
+        return false;
+      }
+
+      try {
+        const payload = parseJwt(token);
+        session.accessToken = token;
+        session.refreshToken = '';
+        session.idToken = '';
+        session.roles = extractRoles(payload);
+        session.isAdmin = session.roles.includes('psn-admin');
+        session.expiresAt = (payload.exp || 0) * 1000;
+        modeBadge.textContent = session.isAdmin ? 'mode: admin' : 'mode: read-only';
+        roleBadge.textContent = `role: ${session.roles.join(', ') || 'authenticated'}`;
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function sha256(value) {
+      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+      return btoa(String.fromCharCode(...new Uint8Array(hash))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    function randomBase64Url(bytes = 32) {
+      const buffer = new Uint8Array(bytes);
+      crypto.getRandomValues(buffer);
+      return btoa(String.fromCharCode(...buffer)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+    }
+
+    async function startLogin() {
+      if (!window.isSecureContext || !crypto?.subtle) {
+        throw new Error('OIDC login requires HTTPS (or localhost).');
+      }
+
+      const verifier = randomBase64Url(64);
+      const challenge = await sha256(verifier);
+      const oidcState = randomBase64Url(16);
+
+      sessionStorage.setItem('psn_pkce_verifier', verifier);
+      sessionStorage.setItem('psn_oidc_state', oidcState);
+
+      const params = new URLSearchParams({
+        client_id: CLIENT_ID,
+        redirect_uri: REDIRECT_URI,
+        response_type: 'code',
+        scope: 'openid profile email',
+        code_challenge: challenge,
+        code_challenge_method: 'S256',
+        state: oidcState
+      });
+
+      window.location.href = `${AUTH_BASE}/realms/${REALM}/protocol/openid-connect/auth?${params.toString()}`;
+    }
+
+    async function finishLoginFromCallback() {
+      const params = new URLSearchParams(window.location.search);
+      const error = params.get('error');
+      if (error) {
+        setStatus(`Keycloak sign-in failed: ${error}`, 'bad');
+        return;
+      }
+
+      const code = params.get('code');
+      if (!code) return;
+
+      if (params.get('state') !== sessionStorage.getItem('psn_oidc_state')) {
+        throw new Error('OIDC state mismatch. Sign in again.');
+      }
+
+      const verifier = sessionStorage.getItem('psn_pkce_verifier');
+      if (!verifier) throw new Error('PKCE verifier missing. Sign in again.');
+
+      const body = new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id: CLIENT_ID,
+        code,
+        redirect_uri: REDIRECT_URI,
+        code_verifier: verifier
+      });
+
+      const response = await fetch(`${AUTH_BASE}/realms/${REALM}/protocol/openid-connect/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+        body: body.toString()
+      });
+
+      if (!response.ok) {
+        throw new Error(`Token exchange failed: ${response.status} ${response.statusText}`);
+      }
+
+      const tokenResponse = await response.json();
+      applySession(tokenResponse);
+      sessionStorage.removeItem('psn_pkce_verifier');
+      sessionStorage.removeItem('psn_oidc_state');
+      window.history.replaceState({}, document.title, REDIRECT_URI);
+      setStatus('Signed in with Keycloak.', 'ok');
+    }
+
+    async function refreshTokenIfNeeded() {
+      if (!session.accessToken) throw new Error('Please sign in with Keycloak first.');
+      if (!session.refreshToken || Date.now() < (session.expiresAt - 30000)) return;
+
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id: CLIENT_ID,
+        refresh_token: session.refreshToken
+      });
+
+      const response = await fetch(`${AUTH_BASE}/realms/${REALM}/protocol/openid-connect/token`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+        body: body.toString()
+      });
+
+      if (!response.ok) {
+        clearSession();
+        throw new Error('Session expired. Sign in again.');
+      }
+
+      applySession(await response.json());
+    }
+
+    async function api(path, options = {}) {
+      await refreshTokenIfNeeded();
+      const headers = { ...(options.headers || {}), Accept: 'application/json' };
+      if (options.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+      headers.Authorization = `Bearer ${session.accessToken}`;
+
+      const res = await fetch(path, { ...options, headers });
+      const text = await res.text();
+      if (!res.ok) {
+        throw new Error(`${res.status} ${res.statusText}${text ? ` | ${text}` : ''}`);
+      }
+      return text ? JSON.parse(text) : null;
+    }
+
+    function optionHtml(items, valueField, labelFn) {
+      return items.map(item => `<option value="${item[valueField]}">${labelFn(item)}</option>`).join('');
+    }
+
+    function populateSelectors(devices, users) {
+      deviceSelect.disabled = devices.length === 0;
+      userSelect.disabled = users.length === 0;
+      deviceSelect.innerHTML = devices.length
+        ? optionHtml(devices, 'id', d => `${d.displayName || d.deviceUuid} (${d.deviceUuid})`)
+        : '<option value="">No devices available</option>';
+      userSelect.innerHTML = users.length
+        ? optionHtml(users, 'id', u => `${u.username} (${u.email})`)
+        : '<option value="">No users available</option>';
+    }
+
+    function renderPlan(plan) {
+      lastPlan = plan;
+      deviceSummary.textContent = `${plan.device.displayName || '-'} | ${plan.device.deviceUuid}`;
+      userSummary.textContent = `${plan.user.username} | ${plan.user.email}`;
+      hostShellSummary.textContent = plan.hostShellCommand;
+      serviceShellSummary.textContent = plan.serviceShellCommand;
+      installScript.value = plan.installScript || '';
+
+      groupSummary.innerHTML = plan.groups.map(group => {
+        const apps = group.applications.length
+          ? group.applications.map(app => `<span class="chip">${app.name} (${app.balenaAppSlug})</span>`).join(' ')
+          : '<span class="chip">no enabled apps</span>';
+        return `<div style="margin-bottom:10px;"><strong>${group.name}</strong><div style="margin-top:6px;">${apps}</div></div>`;
+      }).join('') || '<div class="small">No groups assigned to the selected user.</div>';
+
+      checklistEl.innerHTML = plan.checklist.map(item => `
+        <div class="check-item">
+          <h3>${item.title}</h3>
+          <p>${item.detail}</p>
+        </div>`).join('');
+
+      endpointsBody.innerHTML = plan.endpoints.map(endpoint => `
+        <tr>
+          <td>${endpoint.system}</td>
+          <td class="mono">${endpoint.method}</td>
+          <td class="mono">${endpoint.path}</td>
+          <td>${endpoint.purpose}</td>
+        </tr>`).join('');
+    }
+
+    async function loadSelectors() {
+      const [users, devices] = await Promise.all([
+        api('/api/admin/users'),
+        api('/api/admin/devices')
+      ]);
+
+      populateSelectors(devices || [], users || []);
+    }
+
+    async function buildPlan() {
+      if (!session.isAdmin) {
+        setStatus('Onboarding planning requires the psn-admin role.', 'bad');
+        return;
+      }
+
+      const deviceId = deviceSelect.value;
+      const userId = userSelect.value;
+      const installerUrl = installerUrlInput.value.trim();
+      const registrationToken = registrationTokenInput.value.trim();
+      const serviceName = serviceNameInput.value.trim() || 'main';
+
+      if (!deviceId || !userId) {
+        setStatus('Select both a device and a user first.', 'bad');
+        return;
+      }
+
+      const plan = await api('/api/admin/balena/onboarding/plan', {
+        method: 'POST',
+        body: JSON.stringify({
+          deviceId,
+          userId,
+          installerUrl,
+          registrationToken,
+          serviceName
+        })
+      });
+
+      renderPlan(plan);
+      setStatus('Onboarding plan generated.', 'ok');
+    }
+
+    async function copyText(text, label) {
+      await navigator.clipboard.writeText(text);
+      setStatus(`${label} copied to clipboard.`, 'ok');
+    }
+
+    document.getElementById('buildPlanBtn').addEventListener('click', () => buildPlan().catch(err => setStatus(`Build failed: ${err.message}`, 'bad')));
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      try {
+        await startLogin();
+      } catch (err) {
+        setStatus(`Login start failed: ${err.message}`, 'bad');
+      }
+    });
+    document.getElementById('logoutBtn').addEventListener('click', () => {
+      const idTokenHint = session.idToken;
+      clearSession();
+      window.location.href = `${AUTH_BASE}/realms/${REALM}/protocol/openid-connect/logout?${new URLSearchParams({
+        post_logout_redirect_uri: REDIRECT_URI,
+        id_token_hint: idTokenHint
+      }).toString()}`;
+    });
+    document.getElementById('copyScriptBtn').addEventListener('click', () => {
+      if (!lastPlan?.installScript) {
+        setStatus('Build a plan first.', 'bad');
+        return;
+      }
+      copyText(lastPlan.installScript, 'Installer script').catch(err => setStatus(`Copy failed: ${err.message}`, 'bad'));
+    });
+    document.getElementById('copyHostBtn').addEventListener('click', () => {
+      if (!lastPlan?.hostShellCommand) {
+        setStatus('Build a plan first.', 'bad');
+        return;
+      }
+      copyText(lastPlan.hostShellCommand, 'SSH command').catch(err => setStatus(`Copy failed: ${err.message}`, 'bad'));
+    });
+
+    (async () => {
+      try {
+        await finishLoginFromCallback();
+      } catch (err) {
+        setStatus(err.message, 'bad');
+      }
+
+      if (!session.accessToken && storedToken) {
+        applyStoredToken(storedToken);
+      }
+
+      if (session.accessToken) {
+        try {
+          await loadSelectors();
+          setStatus('Select a device and user, then build the onboarding plan.', 'ok');
+        } catch (err) {
+          setStatus(`Load failed: ${err.message}`, 'bad');
+        }
+      } else {
+        setStatus('Sign in with Keycloak to load onboarding data.', 'ok');
+      }
+    })();
+  </script>
+</body>
+</html>

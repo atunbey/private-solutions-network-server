@@ -132,7 +132,7 @@ services:
     restart: unless-stopped
     environment:
       DOTNET_ENVIRONMENT: Production
-      Balena__ApiBase: https://api.balena-cloud.com
+      Balena__ApiBase: ${BALENA_API_BASE:-}
       Balena__ApiToken: ${BALENA_API_TOKEN:-}
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=private_solutions_network;Username=balena;Password=balena
     depends_on:
@@ -152,7 +152,7 @@ services:
     container_name: psn-server-admin-portal
     restart: unless-stopped
     volumes:
-      - ./deploy/admin-portal/index.html:/usr/share/nginx/html/index.html:ro
+      - ./deploy/admin-portal:/usr/share/nginx/html:ro
     networks:
       - psn-public
     healthcheck:

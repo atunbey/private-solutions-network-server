@@ -18,6 +18,7 @@ builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(connect
 
 var authority = builder.Configuration["Jwt:Authority"];
 var audience = builder.Configuration["Jwt:Audience"] ?? "account";
+var externalAuthority = "https://psnadmin.atun-bey.com/realms/private-solutions-network";
 
 builder.Services
     .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -31,10 +32,26 @@ builder.Services
         {
             OnTokenValidated = context =>
             {
-                if (context.Principal?.Identity is ClaimsIdentity identity && context.SecurityToken is JwtSecurityToken jwt)
+                if (context.Principal?.Identity is ClaimsIdentity identity)
                 {
-                    AddRoles(identity, jwt, "realm_access", null);
-                    AddRoles(identity, jwt, "resource_access", "psn-admin-portal");
+                    var authorizationHeader = context.Request.Headers.Authorization.ToString();
+                    var bearerToken = authorizationHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)
+                        ? authorizationHeader[7..].Trim()
+                        : authorizationHeader.Trim();
+
+                    if (!string.IsNullOrWhiteSpace(bearerToken))
+                    {
+                        try
+                        {
+                            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(bearerToken);
+                            AddRoles(identity, jwt, "realm_access", null);
+                            AddRoles(identity, jwt, "resource_access", "psn-admin-portal");
+                        }
+                        catch
+                        {
+                            // Ignore malformed bearer tokens and continue with the validated principal.
+                        }
+                    }
                 }
 
                 return Task.CompletedTask;
@@ -44,6 +61,15 @@ builder.Services
         {
             ValidateIssuer = !string.IsNullOrWhiteSpace(authority),
             ValidateAudience = true,
+            IssuerValidator = (issuer, token, parameters) =>
+            {
+                if (IssuerMatches(issuer, authority) || IssuerMatches(issuer, externalAuthority))
+                {
+                    return issuer;
+                }
+
+                throw new SecurityTokenInvalidIssuerException($"The issuer '{issuer}' is invalid");
+            },
             RoleClaimType = ClaimTypes.Role,
             NameClaimType = "preferred_username"
         };
@@ -52,6 +78,12 @@ builder.Services
 builder.Services.AddAuthorization();
 
 var app = builder.Build();
+
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await dbContext.Database.MigrateAsync();
+}
 
 app.MapGet("/healthz", () => Results.Ok(new { status = "ok", service = "admin-api" }));
 app.MapGet("/api/admin/healthz", () => Results.Ok(new { status = "ok", service = "admin-api" }));
@@ -105,4 +137,14 @@ static void AddRoles(ClaimsIdentity identity, JwtSecurityToken jwt, string claim
             }
         }
     }
+}
+
+static bool IssuerMatches(string? left, string? right)
+{
+    if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+    {
+        return false;
+    }
+
+    return string.Equals(left.TrimEnd('/'), right.TrimEnd('/'), StringComparison.OrdinalIgnoreCase);
 }

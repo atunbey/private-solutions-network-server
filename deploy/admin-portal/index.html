@@ -124,6 +124,8 @@
     .row, .row-3 { display: grid; gap: 8px; }
     .row { grid-template-columns: 1fr 1fr; }
     .row-3 { grid-template-columns: repeat(3, 1fr); }
+    .field { display: grid; gap: 4px; }
+    .field-label { font-size: 0.75rem; color: var(--ink-1); }
 
     .toolbar { display: flex; flex-wrap: wrap; gap: 8px; }
     .actions { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -201,6 +203,7 @@
       <button class="btn-ghost" id="logoutBtn">Logout</button>
       <button class="btn-ghost" id="refreshAllBtn">Refresh All</button>
       <button class="btn-ghost" id="manualTokenToggleBtn">Advanced Token</button>
+      <a class="btn-ghost" href="/balena-onboarding.html" style="text-decoration:none; display:inline-flex; align-items:center; justify-content:center;">Balena Onboarding</a>
     </section>
 
     <section class="panel" id="manualTokenPanel" style="display:none;">
@@ -257,8 +260,14 @@
           </div>
 
           <div class="row" data-admin-only>
-            <select id="assignUserSelect"></select>
-            <select id="assignGroupSelect"></select>
+            <div class="field">
+              <label class="field-label" for="assignUserSelect">User to assign</label>
+              <select id="assignUserSelect" aria-label="User to assign"></select>
+            </div>
+            <div class="field">
+              <label class="field-label" for="assignGroupSelect">Target group</label>
+              <select id="assignGroupSelect" aria-label="Target group"></select>
+            </div>
           </div>
           <div class="toolbar" data-admin-only>
             <button class="btn-ghost" id="assignGroupBtn">Assign User To Group</button>
@@ -286,8 +295,14 @@
           </div>
 
           <div class="row" data-admin-only>
-            <select id="groupForAppSelect"></select>
-            <select id="appForGroupSelect"></select>
+            <div class="field">
+              <label class="field-label" for="groupForAppSelect">Group to update</label>
+              <select id="groupForAppSelect" aria-label="Group to update"></select>
+            </div>
+            <div class="field">
+              <label class="field-label" for="appForGroupSelect">Application to assign</label>
+              <select id="appForGroupSelect" aria-label="Application to assign"></select>
+            </div>
           </div>
           <div class="toolbar" data-admin-only>
             <button class="btn-ghost" id="assignAppBtn">Assign App To Group</button>
@@ -345,8 +360,14 @@
           </div>
 
           <div class="row" data-admin-only>
-            <select id="assignDeviceSelect"></select>
-            <select id="assignDeviceUserSelect"></select>
+            <div class="field">
+              <label class="field-label" for="assignDeviceSelect">Device to update</label>
+              <select id="assignDeviceSelect" aria-label="Device to update"></select>
+            </div>
+            <div class="field">
+              <label class="field-label" for="assignDeviceUserSelect">User to assign</label>
+              <select id="assignDeviceUserSelect" aria-label="User to assign"></select>
+            </div>
           </div>
           <div class="toolbar" data-admin-only>
             <button class="btn-ghost" id="assignDeviceUserBtn">Assign User To Device</button>
@@ -470,6 +491,10 @@
     }
 
     async function startLogin() {
+      if (!window.isSecureContext || !crypto?.subtle) {
+        throw new Error('OIDC login requires HTTPS (or localhost). Open this portal via https://<host> or use localhost tunneling for testing.');
+      }
+
       const verifier = randomBase64Url(64);
       const challenge = await sha256(verifier);
       const oidcState = randomBase64Url(16);
@@ -576,13 +601,25 @@
       return items.map(item => `<option value="${item[valueField]}">${labelFn(item)}</option>`).join('');
     }
 
+    function setSelectOptions(selectId, items, valueField, labelFn, emptyLabel) {
+      const select = document.getElementById(selectId);
+      if (!items.length) {
+        select.innerHTML = `<option value="">${emptyLabel}</option>`;
+        select.disabled = true;
+        return;
+      }
+
+      select.disabled = false;
+      select.innerHTML = optHtml(items, valueField, labelFn);
+    }
+
     function refreshSelectors() {
-      document.getElementById('assignUserSelect').innerHTML = optHtml(state.users, 'id', u => `${u.username} (${u.email})`);
-      document.getElementById('assignDeviceUserSelect').innerHTML = optHtml(state.users, 'id', u => `${u.username} (${u.email})`);
-      document.getElementById('assignGroupSelect').innerHTML = optHtml(state.groups, 'id', g => g.name);
-      document.getElementById('groupForAppSelect').innerHTML = optHtml(state.groups, 'id', g => g.name);
-      document.getElementById('appForGroupSelect').innerHTML = optHtml(state.apps, 'id', a => `${a.name} (${a.balenaAppSlug})`);
-      document.getElementById('assignDeviceSelect').innerHTML = optHtml(state.devices, 'id', d => `${d.displayName || d.deviceUuid}`);
+      setSelectOptions('assignUserSelect', state.users, 'id', u => `${u.username} (${u.email})`, 'No users available');
+      setSelectOptions('assignDeviceUserSelect', state.users, 'id', u => `${u.username} (${u.email})`, 'No users available');
+      setSelectOptions('assignGroupSelect', state.groups, 'id', g => g.name, 'No groups available');
+      setSelectOptions('groupForAppSelect', state.groups, 'id', g => g.name, 'No groups available');
+      setSelectOptions('appForGroupSelect', state.apps, 'id', a => `${a.name} (${a.balenaAppSlug})`, 'No apps available');
+      setSelectOptions('assignDeviceSelect', state.devices, 'id', d => `${d.displayName || d.deviceUuid}`, 'No devices available');
     }
 
     function escapeHtml(value) {
@@ -901,7 +938,13 @@
       }
     });
 
-    document.getElementById('loginBtn').addEventListener('click', startLogin);
+    document.getElementById('loginBtn').addEventListener('click', async () => {
+      try {
+        await startLogin();
+      } catch (err) {
+        setStatus(`Login start failed: ${err.message}`, 'bad');
+      }
+    });
     document.getElementById('logoutBtn').addEventListener('click', () => {
       const idTokenHint = session.idToken;
       clearSession();
@@ -970,11 +1013,17 @@
     document.getElementById('assignGroupBtn').addEventListener('click', () => runAction(async () => {
       const userId = document.getElementById('assignUserSelect').value;
       const groupId = document.getElementById('assignGroupSelect').value;
+      if (!userId || !groupId) {
+        throw new Error('Select both a user and a group first.');
+      }
       await api(`/api/admin/users/${userId}/groups/${groupId}`, { method: 'POST' });
     }, 'User assigned to group.'));
     document.getElementById('removeGroupBtn').addEventListener('click', () => runAction(async () => {
       const userId = document.getElementById('assignUserSelect').value;
       const groupId = document.getElementById('assignGroupSelect').value;
+      if (!userId || !groupId) {
+        throw new Error('Select both a user and a group first.');
+      }
       await api(`/api/admin/users/${userId}/groups/${groupId}`, { method: 'DELETE' });
     }, 'User removed from group.'));
     document.getElementById('assignAppBtn').addEventListener('click', () => runAction(async () => {
